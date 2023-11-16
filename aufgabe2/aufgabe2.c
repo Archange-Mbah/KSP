@@ -22,6 +22,9 @@
 #define POPG 12
 #define ASF 13
 #define RSF 14
+#define PUSHL 15
+#define POPL 16
+
 
 /*puschc << 24 ist eine LEFT SHIFT also 01000000000000 */
 
@@ -30,8 +33,9 @@ bool haltbool = false;
 int sp=0; // the stackpointer
 int stack[MAXITEMS];
 int pc=0;
-
-int *program_memory;
+int fp=0; // the framepointer
+ 
+int *program_memory; // the program memory
 int *data_memory;
 
 //unsigned int prog2[];
@@ -54,7 +58,32 @@ int tmp = stack[sp];
 //printf("-[%4s]-> popping [%d] from stack @sp [%d]\n", __func__, tmp, sp);
 return tmp;
 }
-
+ void pushg(int x){  // push the value of the global variable x onto the stack
+        int value=data_memory[x];
+        push(value);
+ }
+ void popg(int x){ // pop the value from the stack and store it in the global variable x
+     int value=pop();
+     data_memory[x]=value;
+ }
+    void asf(int x){ // allocate stack frame
+        push(fp); // push the old frame pointer onto the stack
+        fp=sp; // set the frame pointer to the current stack pointer
+        sp=sp+x; // increment the stack pointer by the size of the local variables
+    }
+    void rsf(){ // restore stack frame
+        sp=fp; // set the stack pointer to the frame pointer
+        fp=pop(); // pop the old frame pointer from the stack
+    }
+    void pushl(int x){ // push the value of the local variable x onto the stack
+       int value=stack[fp+x];
+       push(value);
+    }
+    void popl(int x){ // pop the value from the stack and store it in the local variable x
+        int value=pop();
+        stack[fp+x]=value;
+    }	    
+ 
 // the stack
 void sub(){
     int a=pop();
@@ -77,6 +106,7 @@ void division() {
         push(c);
     } else {
         printf("Error: Division by zero\n");
+        exit(1);
         // Hier könnten Sie geeignete Maßnahmen ergreifen, um den Fehler zu behandeln
     }
 }
@@ -135,7 +165,7 @@ void add(){
 void programExecutor(){
     pc = 0;
     haltbool = false;
-    while(!haltbool){
+    while(!haltbool){  //   question: avant on sauvegardait les instructions dans un tableau et on les executait apres mais maintenant on les execute directement, comment est ce que les instuctions sont mnt lues?
         unsigned int instruction = program_memory[pc]; // Extract the instruction
         pc++;
         unsigned int opcode = instruction >> 24; // Extract the opcode
@@ -185,7 +215,25 @@ void programExecutor(){
                 break;
             case WRCHR:
                 wrchr();
-                break;                                                                            
+                break; 
+            case PUSHG:
+                pushg(argument);
+                break; 
+            case POPG:
+                popg(argument);
+                break;
+            case ASF:
+                asf(argument);
+                break;
+            case RSF:
+                rsf();
+                break;
+            case PUSHL:
+                pushl(argument);
+                break;
+            case POPL:
+                popl(argument);
+                break;                                                                                                  
         }
     
     }
@@ -237,7 +285,26 @@ void programLister(){
         case WRCHR:
              printf("00%d:\tWRCHR\n", pc);
                  
-                 break;                                                                            
+                 break;   
+        case PUSHG:
+             printf("00%d:\tPUSHG  %d\n", pc, argument);
+                 break;
+        case POPG:  
+                printf("00%d:\tPOPG  %d\n", pc, argument);
+                    break;      
+        case ASF:   
+                printf("00%d:\tASF  %d\n", pc, argument);
+                    break;
+        case RSF:                                                                   
+                printf("00%d:\tRSF\n", pc);
+                    break;
+        case PUSHL:                                                                   
+                printf("00%d:\tPUSHL  %d\n", pc, argument);
+                    break;
+        case POPL:                                                                   
+                printf("00%d:\tPOPL  %d\n", pc, argument);
+                    break;
+                                                                    
     }
   }
        
@@ -283,13 +350,13 @@ FILE *fp=NULL;
               exit(1);
           }
           char c[4];
-          fread(c, 1, 4, fp);
+          fread(c, 1, 4, fp);// we copy the first 4 bytes of the file into c and fp icrements by 1
           if(strncmp(c, "NJBF", 4)!=0){
               printf("Error: Wrong file format\n");
               exit(1);
           }
         int version;
-        fread(&version, 4, 1, fp);
+        fread(&version, 4, 1, fp);// fread returns the number of elements successfully read
         if(version!=VERSION){
             printf("Error: Wrong file version\n");
             exit(1);
@@ -302,6 +369,10 @@ FILE *fp=NULL;
         data_memory=malloc(numberOfVariables*sizeof(int)); // allocate memory for the data variables
          
          fread(program_memory, sizeof(int), instructionCount, fp);
+         if(fread(program_memory, sizeof(int), instructionCount, fp)!=instructionCount){
+             printf("Error: Could not read program\n");
+             exit(1);
+         }
         
           
               
