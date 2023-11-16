@@ -138,22 +138,7 @@ void mod(){
         haltbool = true;
     }
 
-/*void print_stack(void) {
-printf("\n Stack\n");
 
-
-
-
-//printf(".-------+--------.\n");
-for (int i=sp; i>=0; i--) {
-if (i==sp)
-printf("|sp->%3d| <empty>|\n", i);
-else
-printf("|%7d| %5d |\n", i, stack[i]);
-}
-printf("'-------+--------'\n\n");
-}
-*/
 
 void add(){
     int a=pop();
@@ -251,11 +236,11 @@ void programLister(){
         
     switch(opcode){
          case HALT:
-         printf("00%d:\tHALT\n", pc);
+         printf("00%d:\thalt\n", pc);
          halt();
             break;
          case PUSHC:
-             printf("00%d:\tPUSHC  %d\n", pc, argument);
+             printf("00%d:\tpushc  %d\n", pc, argument);
             break;
         case ADD:
             printf("00%d:\tADD\n", pc);
@@ -312,20 +297,6 @@ void programLister(){
   
 }
 
-
-
-/*int main (int argc, char *argv[]) {
-int value;
-print_stack();
-push(5);
-print_stack();
-push(3);
-print_stack();
-value=pop();
-print_stack();
-return 0;
-}
-*/
 int main( int argc, char *argv[]){ // arguments are stored in argv and argc stores the number of arguments
 FILE *fp=NULL;
 //int read_len=0;
@@ -335,7 +306,7 @@ FILE *fp=NULL;
      }
      else if (argc>1){
         if(strcmp(argv[1],"--version")==0){ // Strcmp returns 0 if the strings are equal
-            printf("Ninja Virtual Machine version 1 (compiled %s %s)\n", __DATE__, __TIME__);
+            printf("Ninja Virtual Machine version 2 (compiled %s %s)\n", __DATE__, __TIME__);
         }
         else if(strcmp(argv[1],"--help")==0){ // Strcmp returns 0 if the strings are equal
             printf("Usage: ninja [options] [option]\n");
@@ -369,11 +340,10 @@ FILE *fp=NULL;
         data_memory=malloc(numberOfVariables*sizeof(int)); // allocate memory for the data variables
          
          fread(program_memory, sizeof(int), instructionCount, fp);
-         if(fread(program_memory, sizeof(int), instructionCount, fp)!=instructionCount){
+         /*if(fread(program_memory, sizeof(int), instructionCount, fp)!=instructionCount){
              printf("Error: Could not read program\n");
-             exit(1);
-         }
-        
+             exit(1);*/
+         
           
               
               
@@ -381,15 +351,6 @@ FILE *fp=NULL;
             programExecutor();
             printf("Ninja Virtual Machine stopped  \n");
             fclose(fp);
-
-          
-             
-          
-             
-        }
-
-     }
-   
-
-
+}
+   }
 }

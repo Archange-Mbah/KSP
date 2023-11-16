@@ -1,6 +1,5 @@
-pushg   4
-popg    
-asf     5
-rsf     3
+pushg    5
 pushl   2
-popl
+pushc   10
+wrchr   
+halt 
