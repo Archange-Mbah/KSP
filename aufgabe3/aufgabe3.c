@@ -432,7 +432,7 @@ void executeInstruction(unsigned int opcode ,int argument){
 
   void debugMode(){
     
-    printf("debug an\n");
+     printf("DEBUG: inspect, list, breakpoint, step, run, quit?");
     char c[50];
     while(debug){
          printf("debug> ");
@@ -468,7 +468,7 @@ void executeInstruction(unsigned int opcode ,int argument){
        
 
         else{
-            printf("repeat\n");
+            printf("DEBUG: inspect, list, breakpoint, step, run, quit?");
         }
   }
   }
@@ -501,6 +501,27 @@ void programExecutor(){
 int main( int argc, char *argv[]){ // arguments are stored in argv and argc stores the number of arguments
 FILE *fp=NULL;
 int x;
+int d=0;
+int h=0;
+int v=0;
+
+         
+         
+        for(int i =1; i<argc; i++){
+            if(strcmp(argv[i], "--version")==0)v=1;
+             if (strcmp(argv[i], "--help")==0)h=1;
+            if (strcmp(argv[i], "--debug")==0)d=1;
+         }
+    
+         if(v+h+d<argc-2 ){
+             printf("Error: Unknown option , try --help\n");
+             exit(1);
+        }
+        if(v==1){
+            printf("Ninja Virtual Machine version 2 (compiled %s %s)\n", __DATE__, __TIME__);
+            exit(0);
+        }
+                    
 //int read_len=0;
      for(int i =1; i<argc; i++){
         if(strcmp(argv[i],"--debug")==0){
