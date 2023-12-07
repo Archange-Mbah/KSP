@@ -17,7 +17,7 @@
 #define programSaver 100
 #define IMMEDIATE(x) ((x) & 0x00FFFFFF) // die 24 bit werden auf 0 gesetzt zb Immediate(3) = 000000000000000000000000000011
 #define SIGN_EXTEND(i) ((i) & 0x00800000 ? (i) | 0xFF000000 : (i)) // 0x00800000 = 00000000000000000000100000000000i if the number is negative it will give 1 and if it is positive it will give 0
-#define VERSION 4
+#define VERSION 5
 #define PUSHG 11    
 #define POPG 12
 #define ASF 13
@@ -79,6 +79,21 @@ void programLister(void);
 void debugMode(void);
 void programExecutor(void); //
 
+typedef int Object;
+typedef Object *ObjRef;
+typedef struct{
+     bool isObjRef;
+     union{
+        ObjRef objref;
+        int intVal;
+     }u;
+} StackSlot;
+
+StackSlot stack[MAXITEMS]; // the stack
+
+
+
+
 
 /*puschc << 24 ist eine LEFT SHIFT also 01000000000000 */
 
@@ -87,109 +102,133 @@ bool debug=false;
 bool breakpoint=false;
 
 int sp=0; // the stackpointer
-int stack[MAXITEMS];
 int pc=0;
 int fp=0; // the framepointer
  
 int *program_memory; // the program memory
-int *data_memory;
+ObjRef *data_memory;
 int breakpointVariable=0;
-int return_register=0;
+ObjRef return_register=0;
+
+
+
 
 //unsigned int prog2[];
 
-
-
-
-void push(int x) {
-//printf("-[%4s]-> pushing [%d] onto stack @sp [%d]\n", __func__, x, sp);
-stack[sp]=x;
-//printf("-[%4s]-> inc stack pointer [%d -> ", __func__, sp);
-sp++;
-//printf("%d]\n", sp);
+ObjRef createObjRef(int size){ // create an object reference
+    ObjRef object=malloc(size);
+    return object;
 }
-int pop(void) {
-//printf("-[%4s]-> dec stack pointer [%d -> ", __func__, sp);
+
+//leg ein Number Array an und speichere die Werte in diesem Array
+void pushNumber(int x) {
+stack[sp].isObjRef=false;
+stack[sp].u.intVal=x;
+printf("pushed %d\n", x);
+sp++;
+}
+
+void pushObjRef(ObjRef x) {
+stack[sp].isObjRef=true;
+stack[sp].u.objref=x;
+printf("pushed %d\n", *x);
+sp++;
+}
+int popNumber(void) {
 sp--;
-//printf("%d]\n", sp);
-int tmp = stack[sp];
-//printf("-[%4s]-> popping [%d] from stack @sp [%d]\n", __func__, tmp, sp);
-return tmp;
+//printf("-[%4s]-> dec stack pointer %d -> ", __func__, sp);
+return stack[sp].u.intVal;
+}
+ObjRef popObjRef(void) {
+sp--;
+//printf("-[%4s]-> dec stack pointer %d -> ", __func__, sp);
+return stack[sp].u.objref;
 }
  void pushg(int x){  // push the value of the global variable x onto the stack
-       
-        push(data_memory[x]);
- }
+ pushObjRef(data_memory[x]);
+}
  void popg(int x){ // pop the value from the stack and store it in the global variable x
-     int value=pop();
-     data_memory[x]=value;
+    data_memory[x]=popObjRef();
  }
     void asf(int x){ // allocate stack frame
-        push(fp); // push the old frame pointer onto the stack
+        pushNumber(fp); // push the old frame pointer onto the stack
         fp=sp; // set the frame pointer to the current stack pointer
-        sp=sp+x; // increment the stack pointer by the size of the local variables
+        sp=sp+x; // increment the stack pointer by x
     }
     void rsf(void){ // restore stack frame
         sp=fp; // set the stack pointer to the frame pointer
-        fp=pop(); // pop the old frame pointer from the stack
+        fp=popNumber(); // pop the old frame pointer from the stack and store it in the frame pointer
     }
     void pushl(int x){ // push the value of the local variable x onto the stack
-       int value=stack[fp+x];
-       push(value);
+        pushObjRef(stack[fp+x].u.objref);
+            
     }
     void popl(int x){ // pop the value from the stack and store it in the local variable x
-        int value=pop();
-        stack[fp+x]=value;
+        stack[fp+x].u.objref=popObjRef();
     }	    
  
 // the stack
 void sub(void){
-    int a=pop();
-    int b=pop();
-    int c=b-a;
-    push(c);
+int a=*(popObjRef());
+int b=*(popObjRef());
+ObjRef c=malloc(sizeof(Object));
+*c=b-a;
+pushObjRef(c);
+
 }
-void mul(void){
-    int a=pop();
-    int b=pop();
-    int c=a*b;
-    push(c);
+void mul(void) {
+     int a= *(popObjRef());
+     int b= *(popObjRef());
+         ObjRef c=malloc(sizeof(Object));
+            *c=a*b;
+     pushObjRef(c);
 }
+
 void division(void) {
-    int b = pop();
-    int a = pop();
+       int a= *(popObjRef());
+       int b= *(popObjRef());
+              ObjRef c=malloc(sizeof(Object)); // we have to allocate space in the heap for the object
+              if(a!=0){
+                *c=b/a;
+                pushObjRef(c);
+              }
+              else{
+                printf("Error: Division by zero\n");
+                exit(1);
+              }
+}
     
-    if (b != 0) {
-        int c = a / b;
-        push(c);
-    } else {
+void mod(void) {
+    int a= *(popObjRef());
+    int b= *(popObjRef());
+    ObjRef c=malloc(sizeof(Object));
+    if(a!=0){
+        *c=b%a;
+        pushObjRef(c);
+    }
+    else{
         printf("Error: Division by zero\n");
         exit(1);
-        // Hier könnten Sie geeignete Maßnahmen ergreifen, um den Fehler zu behandeln
     }
 }
-void mod(void){
-    int a=pop();
-    int b=pop();
-    int c=b%a;
-    push(c);
-}
-    void rdint(void){
+       
+void rdint(void){
         int a;
         scanf("%d", &a);
-        push(a);
+        pushNumber(a);
+        
     }
     void wrint(void){
-        int a=pop();
+        int a=popNumber();
         printf("%d", a);
     }
     void rdchr(void){
         char a;
         scanf("%c", &a);
-        push(a);
+        pushNumber(a);
     }
     void wrchr(void){
-        char a=pop();
+        char a=popNumber();
         printf("%c", a);
     }
     void halt(void){
@@ -199,113 +238,137 @@ void mod(void){
 
 
 void add(void){
-    int a=pop();
-    int b=pop();
-    int c=a+b;
-    push(c);
+    int a=*popObjRef();
+    int b=*popObjRef();
+    ObjRef c=malloc(sizeof(Object));
+    *c=a+b;
+     pushObjRef(c);   
 }
 
 void eq(void){
-    int a=pop();
-    int b=pop();
+    int a=*popObjRef();
+    int b=*popObjRef();
+    ObjRef c=malloc(sizeof(Object));
     if(a==b){
-        push(1);
+        *c=1;
     }
     else{
-        push(0);
+        *c=0;
     }
+    pushObjRef(c);
 }
 void ne(void){
-    int a=pop();
-    int b=pop();
+    int a=*popObjRef();
+    int b=*popObjRef();
+    ObjRef c=malloc(sizeof(Object));
     if(a!=b){
-        push(1);
+        *c=1;
     }
     else{
-        push(0);
+        *c=0;
     }
+    pushObjRef(c);
 }
 void lt(void){
-    int a=pop();
-    int b=pop();
+    int a=*popObjRef();
+    int b=*popObjRef();
+    ObjRef c=malloc(sizeof(Object));
     if(b<a){
-        push(1);
+        *c=1;
     }
     else{
-        push(0);
+        *c=0;
     }
+    pushObjRef(c);
 }
 void le(void){
-    int a=pop();
-    int b=pop();
+    int a=*popObjRef();
+    int b=*popObjRef();
+    ObjRef c=malloc(sizeof(Object));
     if(b<=a){
-        push(1);
+        *c=1;
     }
     else{
-        push(0);
+        *c=0;
     }
+    pushObjRef(c);
 }
 void gt(void){
-    int a=pop();
-    int b=pop();
+    int a=*popObjRef();
+    int b=*popObjRef();
+    ObjRef c=malloc(sizeof(Object));
     if(b>a){
-        push(1);
+        *c=1;
     }
     else{
-        push(0);
+        *c=0;
+
     }
 }
 void ge(void){
-    int a=pop();
-    int b=pop();
+    int a=*popObjRef();
+    int b=*popObjRef();
+    ObjRef c=malloc(sizeof(Object));
     if(b>=a){
-        push(1);
+        *c=1;
     }
     else{
-        push(0);
+        *c=0;
     }
+    pushObjRef(c);
 }
 void jmp(int x){
     pc=x;
 }
 
 void brf(int x){
-    int a=pop();
-    if(a==0){
+    ObjRef a=popObjRef();
+    if((*a)==0){
         jmp(x);
     }
 }
 void brt(int x){
-    int a=pop();
-    if(a==1){
+    ObjRef a=popObjRef();
+    if((*a)!=0){
         jmp(x);
     }
 }
 void call(int x){
-    push(pc);
+    ObjRef a=malloc(sizeof(Object));
+    *a=pc;
+    pushObjRef(a);
     jmp(x);
 }
 void ret(void){
-    int a=pop();
-    jmp(a);
+    ObjRef a=popObjRef();
+     jmp(*a);
 }
 void drop(int n){
     while(n>0){
-        pop();
+        if(stack[sp-1].isObjRef==true){
+            popObjRef();
+            }
+        else{
+            popNumber();
+        }
         n--;
     }
 }
 
 void pushr(void){
-    push(return_register);    
+    pushObjRef(return_register);
+     
 }
 void popr(void){
-    return_register=pop();
+    return_register=popObjRef();
 }
 void dup(void){
-    int a=pop();
-    push(a);
-    push(a);
+   if(stack[sp-1].isObjRef==true){
+       pushObjRef(stack[sp-1].u.objref);
+   }
+   else{
+       pushNumber(stack[sp-1].u.intVal);
+   }
 }
 
 
@@ -318,7 +381,7 @@ void executeInstruction(unsigned int opcode ,int argument){
                 
                 break;
             case PUSHC:
-                push(argument);
+                pushNumber(argument);
                 
                 break;
             case ADD:
@@ -679,7 +742,7 @@ int x;
         program_memory=malloc(instructionCount*sizeof(int)); // allocate memory for the program instructions
         int numberOfVariables;
         fread(&numberOfVariables, 4, 1, fp);
-        data_memory=malloc(numberOfVariables*sizeof(int)); // allocate memory for the data variables
+        data_memory=malloc(numberOfVariables*sizeof(ObjRef)); //allocate memory for the data memory it is an array of pointers to objects
          
          fread(program_memory, sizeof(int), instructionCount, fp);
             printf("Ninja Virtual Machine started\n");
