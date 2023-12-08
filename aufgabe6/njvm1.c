@@ -2,10 +2,8 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h> // to use the strcmp function
-#include <bigint.h> // to use the bigInt functions
-#include <support.h> // to use the SIGN_EXTEND and IMMEDIATE functions
-
-
+#include "bigint.h"// to use the bigInt functions
+#include "support.h"// to use the fatalError function
 #define HALT 0
 #define PUSHC 1
 #define ADD 2
@@ -87,7 +85,9 @@ void programExecutor(void);
 typedef struct {
     unsigned int size;
     unsigned char data[1];
-}*ObjRef;
+}
+ Object;
+typedef Object *ObjRef;
 typedef struct{
      bool isObjRef;
      union{
@@ -123,7 +123,7 @@ void * getPrimObjectDataPointer(void * obj){
 }
 
 void fatalError(char *msg) {
-    printf(" Error: %s\n", msg);
+    printf("Fatal error: %s\n", msg);
     exit(1);
 }
 
@@ -144,8 +144,8 @@ void * newPrimObject(int dataSize) {
 ObjRef createObjRef(int value){ // create an object reference
 
 ObjRef intObject;
- 
-    intObject=malloc(sizeof(unsigned int)+sizeof(int));
+ unsigned int objSize=sizeof(unsigned int)+sizeof(int);
+    intObject=malloc(objSize);
     intObject->size=sizeof(int);
     *(int *)intObject->data=value;
     return intObject;
@@ -159,15 +159,11 @@ stack[sp].u.intVal=x;
 sp++;
 }
 
-void pushObjRef2(ObjRef x) {
+void pushObjRef(int x) {
 stack[sp].isObjRef=true;
-stack[sp].u.objref=x;
+ObjRef newObj=createObjRef(x);
+stack[sp].u.objref=newObj;
 sp++;
-}
-void pushObjRef(int x){
-    stack[sp].isObjRef=true;
-    stack[sp].u.objref=createObjRef(x);
-    sp++;
 }
 int popNumber(void) {
 sp--;
@@ -207,52 +203,66 @@ void rsf(void){ // restore stack frame
  
 // the stack
 void sub(void){
-bip.op2=popObjRef();//big.op1 is of type ObjRef 
-bip.op1=popObjRef();
-bigSub();
-pushObjRef2(bip.res);
+int a=*(int *)popObjRef()->data;
+int b=*(int *)popObjRef()->data;
+int c;
+c=b-a;
+pushObjRef(c);
+
 }
 
 void mul(void) {
-    bip.op2=popObjRef();
-    bip.op1=popObjRef();
-    bigMul();
-    pushObjRef2(bip.res);
+     int a= *(int *)popObjRef()->data;
+     int b= *(int *)popObjRef()->data;
+     int c=a*b;
+     pushObjRef(c);
 }
 
 void division(void) {
-    bip.op2=popObjRef();
-    bip.op1=popObjRef();
-    bigDiv();
-    pushObjRef2(bip.res);
+       int a= *(int *)popObjRef()->data;
+       int b= *(int *)popObjRef()->data;
+       int c; // we have to allocate space in the heap for the object
+              if(a!=0){
+                c=b/a;
+                pushObjRef(c);
+              }
+              else{
+                printf("Error: Division by zero\n");
+                exit(1);
+              }
 }
     
 void mod(void) {
-    bip.op2=popObjRef();
-    bip.op1=popObjRef();
-    bigDiv();
-    pushObjRef2(bip.rem);
-
+    int a= *(int *)popObjRef()->data;
+    int b= *(int *)popObjRef()->data;
+    int c;
+    if(a!=0){
+        c=b%a;
+        pushObjRef(c);
+    }
+    else{
+        printf("Error: Division by zero\n");
+        exit(1);
+    }
 }
        
 void rdint(void){
-        bigRead(stdin);
-        pushObjRef2(bip.res);
+        int a;
+        scanf("%d", &a);
+        pushObjRef(a);
         
     }
- void wrint(void){
-     bip.op1 = popObjRef();
-     bigPrint(stdout);
+    void wrint(void){
+      int a=*(int *)popObjRef()->data;
+        printf("%d", a);
     }
-void rdchr(void){
-        char c;
-        fgets(&c, 1, stdin);
-        bigFromInt((int)c);
-        pushObjRef2(bip.res);
+    void rdchr(void){
+        char a;
+        scanf("%c", &a);
+        pushObjRef(a);
     }
-void wrchr(void){
-        bip.op1 = popObjRef();
-        int a = bigToInt();
+    void wrchr(void){
+        char a=*(int *)popObjRef()->data;
         printf("%c", a);
     }
     void halt(void){
@@ -262,91 +272,85 @@ void wrchr(void){
 
 
 void add(void){
-        bip.op2=popObjRef();
-        bip.op1=popObjRef();
-        bigAdd();
-        pushObjRef2(bip.res);   
+    int a=*(int *)popObjRef()->data; // *(int *)popObjRef()->data is the same as *(int *)popObjRef()->data
+    int b=*(int *)popObjRef()->data; // *(int *)popObjRef()->data is the same as *(int *)popObjRef()->data
+    int c;
+    c=a+b;
+     pushObjRef(c);   
 }
 
 void eq(void){
-    bip.op2=popObjRef();
-    bip.op1=popObjRef();
-    int a=bigCmp();
-    if(a==0){
-        bigFromInt(1);
-        pushObjRef2(bip.res);
+    int a=*(int *)popObjRef()->data;
+    int b=*(int *)popObjRef()->data;
+     int c;
+    if(a==b){
+        c=1;
     }
     else{
-        bigFromInt(0);
-        pushObjRef2(bip.res);
+        c=0;
     }
+    pushObjRef(c);
 }
 void ne(void){
-    bip.op2=popObjRef();
-    bip.op1=popObjRef();
-    int a= bigCmp();
-    if(a!=0){
-        bigFromInt(1);
-        pushObjRef2(bip.res);
+    int a=*(int *)popObjRef()->data;
+    int b=*(int *)popObjRef()->data;
+    int c;
+    if(a!=b){
+        c=1;
     }
     else{
-        bigFromInt(0);
-        pushObjRef2(bip.res);   
+        c=0;
     }
+    pushObjRef(c);
 }
 void lt(void){
-    bip.op2=popObjRef();
-    bip.op1=popObjRef();
-    int a= bigCmp();
-    if(a<0){
-        bigFromInt(1);
-        pushObjRef2(bip.res);
+    int a=*(int *)popObjRef()->data;
+    int b=*(int *)popObjRef()->data;
+    int c;
+    if(b<a){
+        c=1;
     }
     else{
-        bigFromInt(0);
-        pushObjRef2(bip.res);
+        c=0;
     }
-   
+    pushObjRef(c);
 }
 void le(void){
-    bip.op2=popObjRef();
-    bip.op1=popObjRef();
-    int a= bigCmp();
-    if(a<=0){
-        bigFromInt(1);
-        pushObjRef2(bip.res);
+    int a=*(int *)popObjRef()->data;
+    int b=*(int *)popObjRef()->data;
+    int c;
+    if(b<=a){
+        c=1;
     }
     else{
-        bigFromInt(0);
-        pushObjRef2(bip.res);
+        c=0;
     }
+    pushObjRef(c);
 }
 void gt(void){
-    bip.op2=popObjRef();
-    bip.op1=popObjRef();
-    int a=bigCmp();
-    if(a>0){
-        bigFromInt(1);
-        pushObjRef2(bip.res);
+    int a=*(int *)popObjRef()->data;
+    int b=*(int *)popObjRef()->data;
+    int c;
+    if(b>a){
+        c=1;
     }
     else{
-        bigFromInt(0);
-        pushObjRef2(bip.res);
+        c=0;
+
     }
-   
+    pushObjRef(c);
 }
 void ge(void){
-    bip.op2=popObjRef();
-    bip.op1=popObjRef();
-    int a=bigCmp();
-    if(a>=0){
-        bigFromInt(1);
-        pushObjRef2(bip.res);
+    int a=*(int *)popObjRef()->data;
+    int b=*(int *)popObjRef()->data;
+    int c;
+    if(b>=a){
+        c=1;
     }
     else{
-        bigFromInt(0);
-        pushObjRef2(bip.res);
+        c=0;
     }
+    pushObjRef(c);
 }
 void jmp(int x){
     pc=x;
@@ -364,11 +368,13 @@ void brt(int x){
     }
 }
 void call(int x){
-    pushNumber(pc);
+    pushObjRef(pc);
     jmp(x);
 }
 void ret(void){
-    pc=popNumber();
+   int  a=*(int *)popObjRef()->data;
+    int b=a;
+    jmp(b);
 }
 void drop(int n){
     while(n>0){
@@ -401,10 +407,9 @@ void executeInstruction(unsigned int opcode ,int argument){
                 
                 break;
             case PUSHC:
-                bigFromInt(argument);
-                pushObjRef2(bip.res);
-                 break;
-               // pushObjRef(argument);
+                pushObjRef(argument);
+                
+                break;
             case ADD:
                 add();
                

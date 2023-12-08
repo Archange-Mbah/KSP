@@ -7,7 +7,6 @@
 #include <ctype.h>
 
 #include "bigint.h"
-#include "support.h"
 
 /**************************************************************/
 
@@ -42,7 +41,7 @@
 #define GET_SIGN(bigObjRef)		(BIG_PTR(bigObjRef)->sign)
 #define SET_SIGN(bigObjRef, val)		(BIG_PTR(bigObjRef)->sign = (val))
 #define GET_DIGIT(bigObjRef, i)		(BIG_PTR(bigObjRef)->digits[i])
-#define SET_DIGIT(bigObjRef, i, val)	(BIG_PTR(bigObjRef)->digits[i] = (val))
+#define SET_DIGIT(bigObjRef, i, val)	(BIG_PTR(bigObjRef)->digits[i] = (val)) //g
 
 
 /**************************************************************/
