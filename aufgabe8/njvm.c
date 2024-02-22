@@ -23,9 +23,12 @@
 #define IS_PRIMITIVE(objRef) (((objRef)->size & MSB) == 0)
 #define GET_ELEMENT_COUNT(objRef) ((objRef)->size & ~MSB)
 #define GET_REFS_PTR(objRef) ((ObjRef *) (objRef)->data)
+#define BROKEN_HEART (1 << (8 * sizeof(unsigned int) - 2))
+#define IS_BROKEN_HEART(objRef) (((objRef)->size & BROKEN_HEART) != 0)
+#define FORWARDPOINTER(objRef) (~BROKEN_HEART & (objRef)->size)
 #define IMMEDIATE(x) ((x) & 0x00FFFFFF) // die 24 bit werden auf 0 gesetzt zb Immediate(3) = 000000000000000000000000000011
 #define SIGN_EXTEND(i) ((i) & 0x00800000 ? (i) | 0xFF000000 : (i)) // 0x00800000 = 00000000000000000000100000000000i if the number is negative it will give 1 and if it is positive it will give 0
-#define VERSION 7
+#define VERSION 8
 #define PUSHG 11    
 #define POPG 12
 #define ASF 13
@@ -97,6 +100,12 @@ void instructionLister(unsigned int opcode, int argument);
 void programLister(void);
 void debugMode(void);
 void programExecutor(void);
+void step1();
+void step2();
+void step3();
+void framepointerInit(void);
+void stackInit(void);
+
 
 
 
@@ -104,6 +113,7 @@ typedef struct {
     unsigned int size;
     unsigned char data[1];
 }*ObjRef;
+
 typedef struct{
      bool isObjRef;
      union{
@@ -112,14 +122,18 @@ typedef struct{
      }u;
 } StackSlot;
 
-StackSlot stack[MAXITEMS]; // the stack
+unsigned  int stackSize=64*1024;
 
+StackSlot *stack;
 
-
-
-
-/*puschc << 24 ist eine LEFT SHIFT also 01000000000000 */
-
+//Heap
+unsigned long  heapSize=8192*1024; // the size of the heap in bytes
+unsigned char *heapPointer;// the pointer to the heap
+unsigned long  numberOfAllocatedBytes=0;// the number of allocated bytes
+bool isGCinAction=false;// is the garbage collector running?
+unsigned char *targetMemoryPointer;// the objects are allocated here
+unsigned char *freePointer;// points to the next free byte in the current halfspace
+unsigned char *halfspaceEnd;// is unused
 bool haltbool = false;
 bool debug=false;
 bool breakpoint=false;
@@ -127,11 +141,159 @@ bool breakpoint=false;
 int sp=0; // the stackpointer
 int pc=0;
 int fp=0; // the framepointer
+int gcpurge=0;
  
 int *program_memory; // the program memory
 ObjRef *data_memory;
 int breakpointVariable=0;
-ObjRef return_register=0;
+ObjRef return_register;
+ int numberOfVariables=0;
+
+
+
+void heapInit(void){
+    heapPointer=malloc(heapSize*sizeof(unsigned char));
+    if(heapPointer==NULL){
+        fatalError("no memory");
+    }
+    targetMemoryPointer=heapPointer;
+    freePointer=heapPointer;
+    halfspaceEnd=heapPointer+(heapSize/2);
+}
+
+ObjRef newCompoundObject(int numObjRefs){
+  ObjRef cmp = malloc(sizeof(int) +  numObjRefs*sizeof(ObjRef));
+  if(cmp==NULL){
+    fatalError("nicht genug speicher!");
+  }
+  cmp->size = numObjRefs | MSB; 
+  return cmp;
+}
+
+ObjRef copyAndFree(ObjRef orig){
+    ObjRef copy;
+    if(IS_PRIMITIVE(orig)){
+        copy=newPrimObject(orig->size);
+        memcpy(copy->data,orig->data,orig->size);
+    }
+    else{
+        copy=newCompoundObject(GET_ELEMENT_COUNT(orig));
+        memcpy(copy->data,orig->data,GET_ELEMENT_COUNT(orig)*sizeof(ObjRef));
+    }
+    return copy;
+}
+ObjRef relocate(ObjRef orig){
+   ObjRef c;
+   if(orig==NULL){
+    c=NULL;
+   }
+   else{
+    if(IS_BROKEN_HEART(orig)){
+        c=(ObjRef)(targetMemoryPointer+FORWARDPOINTER(orig));
+    }
+    else{
+        c=copyAndFree(orig);
+        orig->size=((unsigned char*)c-targetMemoryPointer)|BROKEN_HEART;
+    }
+   }
+   return c;
+
+}
+void garBageCollector(void){
+    isGCinAction=true;
+    numberOfAllocatedBytes=0;
+    step1();
+    step2();
+    step3();
+}
+
+unsigned char* allocate(unsigned int byte){
+    if(numberOfAllocatedBytes+byte<=(heapSize/2)){
+        unsigned char* address;
+        address=freePointer;
+        freePointer=freePointer+byte;
+        numberOfAllocatedBytes+=byte;
+        return address;
+    }
+    else if(isGCinAction==false){
+        unsigned char* address;
+        garBageCollector();
+        address=allocate(byte);
+        isGCinAction=false;
+        return address;
+    }
+    else{
+        fatalError("heap overflow");
+    
+    }
+    return NULL;
+}
+
+
+void step1(){
+    /*unsigned char *fromSpacePointer=targetMemoryPointer;
+    targetMemoryPointer=halfspaceEnd;
+    halfspaceEnd=fromSpacePointer;
+    freePointer=targetMemoryPointer;*/
+    if(halfspaceEnd==(heapPointer+ heapSize)){
+        targetMemoryPointer=heapPointer;
+        freePointer=heapPointer;
+        halfspaceEnd=heapPointer+(heapSize/2);
+}
+else {
+    freePointer=halfspaceEnd;
+    targetMemoryPointer=halfspaceEnd;
+    halfspaceEnd=heapPointer+(heapSize);
+}
+}
+void step2(){
+    return_register=relocate(return_register);
+    bip.op1=relocate(bip.op1);
+    bip.op2=relocate(bip.op2);
+    bip.res=relocate(bip.res);
+
+    for(int i=0;i<numberOfVariables;i++){
+        data_memory[i]=relocate(data_memory[i]);
+    }
+
+    for(int i=0;i<sp;i++){
+        if(stack[i].isObjRef==true){
+            stack[i].u.objref=relocate(stack[i].u.objref);
+        }
+    }
+}
+void step3(){
+    unsigned char *scanPointer=heapPointer;
+    while(scanPointer<freePointer){
+        ObjRef objRef=(ObjRef)scanPointer;
+        if(IS_PRIMITIVE(objRef)){
+            scanPointer=scanPointer+sizeof(unsigned int)+objRef->size;
+        }
+        else{
+            scanPointer=scanPointer+sizeof(unsigned int)+objRef->size;
+            for(int i=0;i<GET_ELEMENT_COUNT(objRef);i++){
+                GET_REFS_PTR(objRef)[i]=relocate(GET_REFS_PTR(objRef)[i]);
+            }
+        }
+    }
+}
+
+void start(void){
+    programExecutor();
+}
+void stackInit(void){
+stack=malloc(stackSize*sizeof(char));
+}
+void framepointerInit(void){
+    for(int i=0;i<sp-fp;i++){
+        stack[fp+i].isObjRef=true;
+        stack[fp+i].u.objref=NULL;
+    }
+}
+
+
+
+/*puschc << 24 ist eine LEFT SHIFT also 01000000000000 */
 
 void * getPrimObjectDataPointer(void * obj){
     ObjRef oo = ((ObjRef)  (obj));
@@ -144,7 +306,7 @@ void fatalError(char *msg) {
 }
 
 void *newPrimObject(int dataSize) {
-    ObjRef o = (ObjRef)malloc(dataSize*sizeof(char)+sizeof(int));
+    ObjRef o = (ObjRef)allocate(dataSize*sizeof(char)+sizeof(int));
   if(o==NULL){
     fatalError("got no memory!");
   }
@@ -161,14 +323,6 @@ void *newPrimObject(int dataSize) {
     return bigObjRef;*/
 }
 
-ObjRef newCompoundObject(int numObjRefs){
-  ObjRef cmp = malloc(sizeof(int) +  numObjRefs*sizeof(ObjRef));
-  if(cmp==NULL){
-    fatalError("nicht genug speicher!");
-  }
-  cmp->size = numObjRefs | MSB; 
-  return cmp;
-}
 
 //unsigned int prog2[];
 
@@ -189,36 +343,64 @@ int objRefToInt(ObjRef objRef){
 
 //leg ein Number Array an und speichere die Werte in diesem Array
 void pushNumber(int x) {
+if(sp>=stackSize/sizeof(StackSlot)){
+    fatalError("stack overflow");
+    exit(1);
+}
 stack[sp].isObjRef=false;
 stack[sp].u.intVal=x;
 sp++;
 }
 
 void pushObjRef2(ObjRef x) {
+    if(sp>=stackSize/sizeof(StackSlot)){
+    fatalError("stack overflow");
+    exit(1);
+}
 stack[sp].isObjRef=true;
 stack[sp].u.objref=x;
 sp++;
 }
 void pushObjRef(int x){
+    if(sp>=stackSize/sizeof(StackSlot)){
+    fatalError("stack overflow");
+    exit(1);
+}
     stack[sp].isObjRef=true;
     stack[sp].u.objref=createObjRef(x);
     sp++;
 }
 int popNumber(void) {
 sp--;
+if(sp<0){
+    fatalError("stack underflow");
+    exit(1);
+}
 //printf("-[%4s]-> dec stack pointer %d -> ", __func__, sp);
 return stack[sp].u.intVal;
 }
 ObjRef popObjRef(void) {
 sp--;
+if(sp<0){
+    fatalError("stack underflow");
+    exit(1);
+}
 //printf("-[%4s]-> dec stack pointer %d -> ", __func__, sp);
 return stack[sp].u.objref;
 }
  void pushg(int x){  // push the value of the global variable x onto the stack
+ if(x<0 || x>numberOfVariables){
+     fatalError("index out of bounds");
+     exit(1);
+ }
  stack[sp].u.objref=data_memory[x];
     sp++;
 }
  void popg(int x){ // pop the value from the stack and store it in the global variable x
+ if(x<0 || x>numberOfVariables){
+     fatalError("index out of bounds");
+     exit(1);
+    }
     data_memory[x]=popObjRef();
  }
 
@@ -867,6 +1049,19 @@ int x;
             printf("Ninja Virtual Machine version %d\n compiled on %s at %s\n", VERSION, __DATE__, __TIME__);
             exit(0);    
         }
+        if(strcmp(argv[i],"--stack")==0){
+            stackSize=atoi(argv[i+1])*1024; 
+        }
+         if(strcmp("--gcstats",argv[i])==0){
+            
+        }
+         if(strcmp("--gcpurge",argv[i])==0){
+            gcpurge=1;
+            
+        }
+        if(strcmp(argv[i],"--heap")==0){
+            heapSize=(int)strtol(argv[i+1],NULL,10)*1024;
+        }
       if(strcmp(argv[1],"--help")==0){ // Strcmp returns 0 if the strings are equal
             printf("Usage: ninja [options] [option]\n");
             printf("Options:\n");
@@ -911,21 +1106,22 @@ int x;
         if(strcmp(argv[i],"--debug")==0){
             debug=true;
             printf("debug an\n");
-     }
+     }  
        
         }
        
         int instructionCount;
         fread(&instructionCount, 4, 1, fp);
         program_memory=malloc(instructionCount*sizeof(int)); // allocate memory for the program instructions
-        int numberOfVariables;
         fread(&numberOfVariables, 4, 1, fp);
         data_memory=malloc(numberOfVariables*sizeof(ObjRef)); //allocate memory for the data memory it is an array of pointers to objects
          
          fread(program_memory, sizeof(int), instructionCount, fp);
-            printf("Ninja Virtual Machine started\n");
-            programExecutor();
-            printf("Ninja Virtual Machine stopped\n");
+         stackInit();
+         heapInit();
+        printf("Ninja Virtual Machine started\n");
+        programExecutor();
+         printf("Ninja Virtual Machine stopped\n");
             fclose(fp);
 }
    
